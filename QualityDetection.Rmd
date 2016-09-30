@@ -1,0 +1,110 @@
+---
+title: "Human Activity Quality Detection Algorithm"
+author: "Ashwin Revo"
+date: "9/27/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load all libraries
+library(caret)
+library(kernlab)
+library(e1071)
+```
+
+## Executive Summary
+
+The purpose of the report to model the quality of exercise done by the test subjects. The idea is to design an algorithm to detect mistakes in the exercise form the subject and give him diagnostic information regarding this. In this paper we examine such a model which will quantify the exercise in 5 categories:
+A - exactly according to the specification
+B - throwing the elbows to the front
+C - lifting the dumbbell only halfway
+D - lowering the dumbbell only halfway
+E - throwing the hips to the front
+
+For more information on the categories please refer to the link in the reference section.
+
+## Details 
+
+### Obtaining Training Data
+
+```{r echo=TRUE, eval=FALSE}
+trainingurl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+trainingCSV <- read.csv(trainingurl)
+```
+
+### Cross Validation 
+
+In order to test the accuracy of the training model, the dataset is partitioned in 2 parts, trainingData and testingData. The testingData is used only to understand the out of sample error rates.
+
+```{r echo=TRUE, eval=FALSE}
+inTrain <- createDataPartition(y=trainingCSV$classe, p=0.6, list=FALSE)
+trainingData <- trainingCSV[inTrain, ]
+testingData <- trainingCSV[-inTrain, ]
+```
+
+### Preprocessing
+
+The data.frame contains multiple NA entries. The first step in this algorithm is to remove these entries. There is an additional data cleaning step I used to remove columns with '#DIV/0!' values since these columns don't capture the actual variation in data.
+
+```{r echo=TRUE, eval=FALSE}
+
+# Remove NA's on a column basis
+colWithNa <- apply(trainingData, 2, function(x){any(is.na(x))})
+trainingDataWithoutNA <- trainingData[, !colWithNa]
+
+# Remove factor variables because these columns correspond to entries with #DIV/0!.
+i <- sapply(trainingDataWithoutNA, is.factor)
+trainingWithoutFactor <- trainingDataWithoutNA[, !i]
+trainingWithoutFactor <- cbind(trainingWithoutFactor, classe=trainingData[,160])
+
+dim(trainingWithoutFactor)
+names(trainingWithoutFactor)
+```
+
+### Principle Component Analysis
+
+An additional preprocessing step could be to run PCA on the training set. As part of the analysis I calculated the correlation matrix on the training set and found many pairs of correlated data. Hence for better accuracy I included PCA as part of the training model.
+
+```{r echo=TRUE, eval=FALSE}
+correlationTempTraining <- trainingWithoutFactor[, -c(1:4, 57)]
+M <- abs(cor(correlationTempTraining))
+diag(M) <- 0
+which(M > 0.9, arr.ind=T)
+```
+
+### Modeling
+
+The model is trained with the Random Forest algorithm with PCA preprocessing step. The response variable in the model is classe and the predictor variables are all the variables in the reduced training data set. These include the roll, pitch, yaw angle of the sensors on the arm, forearm, dumbell and belt. Also included in the predictor variable list are all the sensor output from the magnetometer, accelerometer. 
+
+```{r echo=TRUE, eval=FALSE}
+# Takes around 8 hours to run on my local machine.
+modelFit <- train(classe ~.,data=trainingWithoutFactor, method="rf", prox=TRUE, preProcess="pca")
+modelFit
+```
+
+### In sample error rate
+
+In sample error rate was 0%. This might lead to overfitting the model with the training data.
+
+```{r echo=TRUE, eval=FALSE}
+#Training prediction
+classeHatTraining <- predict(modelFit, trainingWithoutFactor)
+#In sample error rate
+confusionMatrix(trainingWithoutFactor$classe, classeHatTraining)
+```
+
+### Verify model on Training Set
+
+To confirm the validity of the training model, the model was testing on the testing data set. The predicted response variable had an accuracy of 0.7853. 
+
+```{r echo=TRUE, eval=FALSE}
+#Testing prediction
+classeHatTesting <- predict(modelFit, testingData)
+#Out of sample error rate
+confusionMatrix(testingData$classe, classeHatTesting)
+```
+
+## References
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. Please refer to the link for more information.
